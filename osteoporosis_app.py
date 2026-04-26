@@ -67,7 +67,7 @@ def preprocess(df_raw: pd.DataFrame):
 def train_models(X_train, y_train):
     lr = LogisticRegression(
         C=0.1, max_iter=100, penalty="l2",
-        random_state=0, solver="liblinear", multi_class="auto"
+        random_state=0, solver="liblinear"
     )
     rfc = RandomForestClassifier(
         criterion="gini", max_depth=10,
