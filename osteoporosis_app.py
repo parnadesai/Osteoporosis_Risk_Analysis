@@ -286,11 +286,14 @@ with tabs[2]:
 # ══════════════════════════════════════════════
 # TAB 4 – Predict Risk
 # ══════════════════════════════════════════════
+# ══════════════════════════════════════════════
+# TAB 4 – Predict Risk
+# ══════════════════════════════════════════════
 with tabs[3]:
     st.subheader("🔮 Predict Osteoporosis Risk for a New Patient")
     st.markdown(
         "Fill in the patient details below. The app will run all four trained "
-        "models and show you the risk prediction."
+        "models and return a detailed risk assessment."
     )
 
     # Ensure models are trained
@@ -299,8 +302,7 @@ with tabs[3]:
             df_enc, X, y, X_train, X_test, y_train, y_test = preprocess(df_raw)
             models = train_models(X_train, y_train)
 
-    # Build input widgets that mirror the dataset columns (after encoding)
-    # We recreate label encoders so we can encode user inputs consistently
+    # ── Rebuild encoders ──────────────────────────────────────────
     df_tmp = df_raw.copy()
     for col_drop in ["Id", "ID", "id"]:
         if col_drop in df_tmp.columns:
@@ -315,57 +317,241 @@ with tabs[3]:
 
     feature_columns = [c for c in df_tmp.columns if c != "Osteoporosis"]
 
+    # ── Gender watch (outside form so it re-renders reactively) ───
+    gender_options = list(encoders["Gender"].classes_) if "Gender" in encoders else ["Female", "Male"]
+    selected_gender = st.selectbox("Gender", gender_options, key="gender_selector")
+
+    # Gender-conditional hormonal options
+    if selected_gender == "Female":
+        hormonal_options = ["Postmenopausal", "Premenopausal", "None"]
+    else:
+        hormonal_options = ["Low Testosterone", "Normal", "None"]
+
+    # Filter to only valid classes the encoder knows
+    if "Hormonal Changes" in encoders:
+        known = list(encoders["Hormonal Changes"].classes_)
+        hormonal_options = [o for o in hormonal_options if o in known] or known
+
     with st.form("patient_form"):
-        cols_left, cols_right = st.columns(2)
+
+        # ── Section 1: Demographics ───────────────────────────────
+        st.markdown("#### 👤 Demographics")
+        d1, d2, d3 = st.columns(3)
         user_inputs = {}
 
-        for i, col in enumerate(feature_columns):
-            target_col = cols_left if i % 2 == 0 else cols_right
-            with target_col:
-                if col == "Age":
-                    user_inputs[col] = st.number_input("Age", min_value=1, max_value=120, value=50)
-                elif col in encoders:
-                    options = list(encoders[col].classes_)
-                    user_inputs[col] = st.selectbox(col, options)
-                else:
-                    user_inputs[col] = st.number_input(col, value=0)
+        user_inputs["Gender"] = selected_gender   # captured above
 
-        submitted = st.form_submit_button("🔍 Predict", use_container_width=True)
+        with d1:
+            user_inputs["Age"] = st.number_input(
+                "Age", min_value=1, max_value=120, value=50
+            )
+        with d2:
+            if "Race/Ethnicity" in encoders:
+                user_inputs["Race/Ethnicity"] = st.selectbox(
+                    "Race / Ethnicity", list(encoders["Race/Ethnicity"].classes_)
+                )
+        with d3:
+            if "Body Weight" in encoders:
+                user_inputs["Body Weight"] = st.selectbox(
+                    "Body Weight", list(encoders["Body Weight"].classes_)
+                )
 
+        # ── Section 2: Hormonal & Family ─────────────────────────
+        st.markdown("#### 🧬 Hormonal & Genetic Factors")
+        h1, h2 = st.columns(2)
+        with h1:
+            if "Hormonal Changes" in encoders:
+                user_inputs["Hormonal Changes"] = st.selectbox(
+                    "Hormonal Changes", hormonal_options,
+                    help="Options change based on the selected gender above."
+                )
+        with h2:
+            if "Family History" in encoders:
+                user_inputs["Family History"] = st.selectbox(
+                    "Family History of Osteoporosis",
+                    list(encoders["Family History"].classes_)
+                )
+
+        # ── Section 3: Lifestyle ──────────────────────────────────
+        st.markdown("#### 🏃 Lifestyle")
+        l1, l2, l3 = st.columns(3)
+        with l1:
+            if "Physical Activity" in encoders:
+                user_inputs["Physical Activity"] = st.selectbox(
+                    "Physical Activity", list(encoders["Physical Activity"].classes_)
+                )
+        with l2:
+            if "Smoking" in encoders:
+                user_inputs["Smoking"] = st.selectbox(
+                    "Smoking", list(encoders["Smoking"].classes_)
+                )
+        with l3:
+            if "Alcohol Consumption" in encoders:
+                user_inputs["Alcohol Consumption"] = st.selectbox(
+                    "Alcohol Consumption", list(encoders["Alcohol Consumption"].classes_)
+                )
+
+        # ── Section 4: Medical ────────────────────────────────────
+        st.markdown("#### 🏥 Medical History")
+        m1, m2, m3 = st.columns(3)
+        with m1:
+            if "Medical Conditions" in encoders:
+                user_inputs["Medical Conditions"] = st.selectbox(
+                    "Medical Conditions", list(encoders["Medical Conditions"].classes_)
+                )
+        with m2:
+            if "Medications" in encoders:
+                user_inputs["Medications"] = st.selectbox(
+                    "Medications", list(encoders["Medications"].classes_)
+                )
+        with m3:
+            if "Prior Fractures" in encoders:
+                user_inputs["Prior Fractures"] = st.selectbox(
+                    "Prior Fractures", list(encoders["Prior Fractures"].classes_)
+                )
+
+        # ── Section 5: Nutrition ──────────────────────────────────
+        st.markdown("#### 🥗 Nutrition")
+        n1, n2 = st.columns(2)
+        with n1:
+            if "Calcium Intake" in encoders:
+                user_inputs["Calcium Intake"] = st.selectbox(
+                    "Calcium Intake", list(encoders["Calcium Intake"].classes_)
+                )
+        with n2:
+            if "Vitamin D Intake" in encoders:
+                user_inputs["Vitamin D Intake"] = st.selectbox(
+                    "Vitamin D Intake", list(encoders["Vitamin D Intake"].classes_)
+                )
+
+        # Catch any remaining feature columns not yet handled
+        remaining = [c for c in feature_columns if c not in user_inputs]
+        if remaining:
+            st.markdown("#### 📋 Other Factors")
+            rem_cols = st.columns(min(len(remaining), 3))
+            for i, col in enumerate(remaining):
+                with rem_cols[i % 3]:
+                    if col in encoders:
+                        user_inputs[col] = st.selectbox(col, list(encoders[col].classes_))
+                    else:
+                        user_inputs[col] = st.number_input(col, value=0)
+
+        submitted = st.form_submit_button("🔍 Run Risk Assessment", use_container_width=True)
+
+    # ── Results ───────────────────────────────────────────────────
     if submitted:
-        # Build input vector
+        # Build encoded input vector
         input_row = {}
         for col in feature_columns:
-            val = user_inputs[col]
+            val = user_inputs.get(col, 0)
             if col in encoders:
                 val = int(encoders[col].transform([val])[0])
             input_row[col] = val
-
         input_df = pd.DataFrame([input_row])
 
-        st.markdown("---")
-        st.subheader("Prediction Results")
+        all_preds  = {name: int(m.predict(input_df)[0]) for name, m in models.items()}
+        risk_votes = sum(all_preds.values())
+        total      = len(all_preds)
+        risk_pct   = risk_votes / total * 100
 
-        result_cols = st.columns(4)
-        for col_widget, (name, model) in zip(result_cols, models.items()):
-            pred = model.predict(input_df)[0]
-            label = "⚠️ At Risk" if pred == 1 else "✅ Low Risk"
-            color = "#ff4b4b" if pred == 1 else "#21c55d"
+        st.markdown("---")
+        st.subheader("📋 Risk Assessment Results")
+
+        # ── Overall verdict ───────────────────────────────────────
+        if risk_votes == 0:
+            verdict_color = "#21c55d"; verdict_label = "✅ LOW RISK"
+            verdict_msg   = "All models agree: low probability of osteoporosis."
+        elif risk_votes <= total // 2:
+            verdict_color = "#f59e0b"; verdict_label = "⚡ BORDERLINE"
+            verdict_msg   = "Mixed signals — consider a clinical bone-density scan."
+        else:
+            verdict_color = "#ef4444"; verdict_label = "⚠️ HIGH RISK"
+            verdict_msg   = "Majority of models flag elevated osteoporosis risk."
+
+        st.markdown(
+            f"""
+            <div style='padding:20px 24px; border-radius:12px; border:2px solid {verdict_color};
+                        background:{"rgba(239,68,68,0.07)" if risk_votes > total//2 else "rgba(33,197,93,0.07)"};
+                        margin-bottom:16px'>
+              <h2 style='color:{verdict_color}; margin:0'>{verdict_label}</h2>
+              <p style='margin:6px 0 0; color:#555'>{verdict_msg}</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        # ── Vote bar ──────────────────────────────────────────────
+        st.markdown("**Model Consensus**")
+        bar_html = ""
+        for name, pred in all_preds.items():
+            col_c = "#ef4444" if pred == 1 else "#21c55d"
+            seg_label = "At Risk" if pred == 1 else "Low Risk"
+            bar_html += (
+                f"<div style='flex:1; background:{col_c}; color:white; text-align:center;"
+                f"padding:8px 4px; font-size:12px; font-weight:600;'>"
+                f"{name}<br>{seg_label}</div>"
+            )
+        st.markdown(
+            f"<div style='display:flex; border-radius:8px; overflow:hidden; gap:2px'>{bar_html}</div>",
+            unsafe_allow_html=True,
+        )
+        st.caption(f"{risk_votes} of {total} models predict positive osteoporosis risk ({risk_pct:.0f}%)")
+
+        st.markdown("---")
+
+        # ── Per-model cards ───────────────────────────────────────
+        st.markdown("**Individual Model Verdicts**")
+        card_cols = st.columns(4)
+        model_notes = {
+            "Logistic Regression": "Linear boundary — good baseline",
+            "Random Forest":       "Ensemble of trees — robust to noise",
+            "Decision Tree":       "Rule-based — highly interpretable",
+            "SVC":                 "Margin classifier — strong on structure",
+        }
+        for col_widget, (name, pred) in zip(card_cols, all_preds.items()):
+            color = "#ef4444" if pred == 1 else "#21c55d"
+            icon  = "⚠️" if pred == 1 else "✅"
+            label = "At Risk" if pred == 1 else "Low Risk"
+            note  = model_notes.get(name, "")
             col_widget.markdown(
                 f"""
-                <div style='text-align:center; padding:16px; border-radius:10px;
-                            border: 2px solid {color};'>
-                  <p style='font-size:13px; color:gray; margin:0'>{name}</p>
-                  <p style='font-size:22px; font-weight:bold; color:{color}; margin:4px 0'>{label}</p>
+                <div style='border:1.5px solid {color}; border-radius:10px;
+                            padding:14px 12px; text-align:center; height:130px'>
+                  <div style='font-size:11px; color:#888; margin-bottom:4px'>{name}</div>
+                  <div style='font-size:26px'>{icon}</div>
+                  <div style='font-size:15px; font-weight:700; color:{color}'>{label}</div>
+                  <div style='font-size:10px; color:#aaa; margin-top:6px'>{note}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
-        # Majority vote summary
-        all_preds = [int(m.predict(input_df)[0]) for m in models.values()]
-        majority = "⚠️ **HIGH RISK** of Osteoporosis" if sum(all_preds) >= 2 else "✅ **LOW RISK** of Osteoporosis"
-        st.markdown(f"### Consensus: {majority}")
-        st.caption(
-            f"{sum(all_preds)} out of {len(all_preds)} models predict positive osteoporosis risk."
+        # ── Clinical summary ──────────────────────────────────────
+        st.markdown("---")
+        st.markdown("**📌 Patient Summary**")
+
+        display_map = {
+            "Age": user_inputs.get("Age"),
+            "Gender": user_inputs.get("Gender"),
+            "Hormonal Changes": user_inputs.get("Hormonal Changes"),
+            "Family History": user_inputs.get("Family History"),
+            "Body Weight": user_inputs.get("Body Weight"),
+            "Physical Activity": user_inputs.get("Physical Activity"),
+            "Calcium Intake": user_inputs.get("Calcium Intake"),
+            "Vitamin D Intake": user_inputs.get("Vitamin D Intake"),
+            "Prior Fractures": user_inputs.get("Prior Fractures"),
+            "Smoking": user_inputs.get("Smoking"),
+            "Alcohol Consumption": user_inputs.get("Alcohol Consumption"),
+        }
+        summary_df = pd.DataFrame(
+            [(k, v) for k, v in display_map.items() if v is not None],
+            columns=["Factor", "Value"]
         )
+        st.dataframe(summary_df, use_container_width=True, hide_index=True)
+
+        st.info(
+            "⚕️ **Disclaimer:** This tool is for educational/research purposes only. "
+            "Predictions are not a substitute for professional medical diagnosis. "
+            "Consult a physician or bone-density specialist for clinical evaluation."
+        )
+        
